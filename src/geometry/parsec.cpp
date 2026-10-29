@@ -4,7 +4,6 @@
 #include  <cassert>
 #include <cmath>
 #include <fstream>
-#include <iostream>
 #include <Eigen/Dense>
 
 #include "geometry/parsec.h"
@@ -105,38 +104,42 @@ double Parsec::getY(double x, bool isUpper) const {
 }
 
 void Parsec::exportToDat(const std::string &filename, int num_points) const {
+    if (num_points <= 1) return;
 
-    if (num_points <= 1) {
-        std::cerr << "Error crítico: El número de punto debe de ser mayor que 1 \n";
-        return;
+    struct Point { double x, z; };
+    std::vector<Point> points;
+    points.reserve(2 * num_points - 1);
+
+    // 1. Generar la nube de puntos completa
+    for (int i = num_points - 1; i >= 0; --i) {
+        double x = static_cast<double>(i) / (num_points - 1);
+        points.push_back({x, getY(x, true)});
+    }
+    for (int i = 1; i < num_points; ++i) {
+        double x = static_cast<double>(i) / (num_points - 1);
+        points.push_back({x, getY(x, false)});
     }
 
+    // 2. Calcular área firmada (Shoelace formula)
+    double area2 = 0.0;
+    size_t n = points.size();
+    for (size_t i = 0; i < n; ++i) {
+        size_t j = (i + 1) % n;
+        area2 += (points[i].x * points[j].z) - (points[j].x * points[i].z);
+    }
+
+    // 3. Si es horario (area2 < 0), invertir para forzar CCW
+    if (area2 < 0.0) {
+        std::reverse(points.begin(), points.end());
+    }
+
+    // 4. Escribir al archivo .dat
     std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error crítico: No se puede crear el archivo " << filename << "\n";
-        return;
-    }
+    if (!file.is_open()) return;
 
-    // Cabecera (obligatorio para Xfoil)
     file << "V-Genfoil_PARSEC_Geometria\n";
-
     file << std::fixed << std::setprecision(6);
-
-    //Extradós (Upper surface): Desde X=1 (Borde de salida) hasta X=0 (Borde de ataque)
-    for (int i = num_points -1; i >=0 ; --i) {
-        double x = static_cast<double>(i)/(num_points -1);
-        double z = getY(x, /*isUpper=*/ true);
-
-        file<< std::setw(12) << x << std::setw(12) << z << "\n";
+    for (const auto& pt : points) {
+        file << std::setw(12) << pt.x << std::setw(12) << pt.z << "\n";
     }
-
-    //Intradós (Lower surface): Desde X>0 hasta X=1 (Cierra el perfil)
-    for (int i = 1; i < num_points ; ++i) {
-        double x = static_cast<double>(i)/(num_points -1);
-        double z = getY(x, /*isUpper=*/ false);
-
-        file<< std::setw(12) << x << std::setw(12) << z << "\n";
-
-    }
-
 }
